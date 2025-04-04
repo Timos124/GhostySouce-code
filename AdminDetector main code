@@ -1,0 +1,443 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using System.Media;
+using System.Net.Http;
+using System.Runtime.CompilerServices;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
+
+#nullable enable
+internal class Program
+{
+  private static readonly string AdminFolder = "C:\\AdminDetect";
+  private static readonly string AdminFilePath = Path.Combine(Program.AdminFolder, "admin_tmp.txt");
+  private static readonly string AdminListUrl = "https://spyderrock.com/m1776478-adminstmp.txt";
+  private static string DiscordWebhookUrl = "";
+  private static HashSet<string> AdminGroup1 = new HashSet<string>();
+  private static HashSet<string> AdminGroup2 = new HashSet<string>();
+  private static string LogFilePath = "";
+  private static bool Running = false;
+  private static readonly HttpClient client = new HttpClient();
+  private static readonly ConsoleColor PrimaryColor = (ConsoleColor) 11;
+  private static readonly ConsoleColor SecondaryColor = (ConsoleColor) 13;
+  private static readonly ConsoleColor AlertColor = (ConsoleColor) 12;
+  private static readonly ConsoleColor SuccessColor = (ConsoleColor) 10;
+  private static Dictionary<string, DateTime> lastNotificationTimes = new Dictionary<string, DateTime>();
+  private static readonly TimeSpan NotificationDelay = TimeSpan.FromSeconds(10.0);
+
+  private static async Task Main()
+  {
+    Console.Title = "Ghost Admin Detector v1.0";
+    Console.CursorVisible = false;
+    await Program.ShowAnimatedHeader();
+    await Program.InitializeApplication();
+    Program.Running = true;
+    await Program.StartChecking();
+  }
+
+  private static async Task ShowAnimatedHeader()
+  {
+    Console.Clear();
+    string str = "\r\n ██████╗ ██╗  ██╗ ██████╗ ███████╗████████╗██╗   ██╗\r\n██╔════╝ ██║  ██║██╔═══██╗██╔════╝╚══██╔══╝╚██╗ ██╔╝\r\n██║  ███╗███████║██║   ██║███████╗   ██║    ╚████╔╝ \r\n██║   ██║██╔══██║██║   ██║╚════██║   ██║     ╚██╔╝  \r\n╚██████╔╝██║  ██║╚██████╔╝███████║   ██║      ██║   \r\n ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝   ╚═╝      ╚═╝   \r\n\r\n        ADMIN DETECTOR - [BETA] - https://discord.gg/HGd84yMUrv";
+    for (int index = 0; index < str.Length; ++index)
+    {
+      int num = (int) str[index];
+      Console.Write((char) num);
+      if (!char.IsWhiteSpace((char) num))
+        await Task.Delay(5);
+    }
+    str = (string) null;
+    Console.WriteLine("\n\n");
+  }
+
+  private static async Task InitializeApplication()
+  {
+    Program.PrintWithColor("Initializing system...", Program.PrimaryColor);
+    await Task.Delay(500);
+    Program.PrintWithColor("[+] Creating admin directory...", Program.PrimaryColor);
+    Directory.CreateDirectory(Program.AdminFolder);
+    Program.PrintWithColor("[+] Downloading admin database...", Program.PrimaryColor);
+    await Program.SetupAdminFile();
+    Program.LogFilePath = Program.GetLatestLogFilePath();
+    if (string.IsNullOrEmpty(Program.LogFilePath))
+    {
+      Program.PrintWithColor("Auto-detection failed. Checking saved paths...", Program.AlertColor);
+      Program.LoadSavedPaths();
+    }
+    Console.Clear();
+    if (string.IsNullOrEmpty(Program.LogFilePath))
+    {
+      Program.PrintWithColor("Enter chat logs file path: ", Program.SecondaryColor, false);
+      Console.CursorVisible = true;
+      Program.LogFilePath = Console.ReadLine();
+      Console.CursorVisible = false;
+      Program.SavePaths(Program.LogFilePath);
+    }
+    else
+    {
+      Program.PrintWithColor("Press ENTER to continue", Program.SecondaryColor);
+      Console.CursorVisible = true;
+      string str = Console.ReadLine();
+      if (!string.IsNullOrWhiteSpace(str))
+      {
+        Program.LogFilePath = str;
+        Program.SavePaths(Program.LogFilePath);
+      }
+      Console.CursorVisible = false;
+    }
+    Program.LoadSavedWebhook();
+    if (string.IsNullOrEmpty(Program.DiscordWebhookUrl))
+    {
+      Program.PrintWithColor("Enter Discord webhook URL (For notification): ", Program.SecondaryColor, false);
+      Console.CursorVisible = true;
+      Program.DiscordWebhookUrl = Console.ReadLine();
+      Console.CursorVisible = false;
+      Program.SaveWebhook(Program.DiscordWebhookUrl);
+    }
+    else
+    {
+      Program.PrintWithColor("Using saved Discord webhook URL: " + Program.DiscordWebhookUrl, Program.SuccessColor);
+      Program.PrintWithColor("Press ENTER to continue or type a new webhook URL...", Program.SecondaryColor);
+      Console.CursorVisible = true;
+      string str = Console.ReadLine();
+      if (!string.IsNullOrWhiteSpace(str))
+      {
+        Program.DiscordWebhookUrl = str;
+        Program.SaveWebhook(Program.DiscordWebhookUrl);
+      }
+      Console.CursorVisible = false;
+    }
+    Program.PrintWithColor("System ready. Starting detection...", Program.SuccessColor);
+    Console.Clear();
+    await Task.Delay(1000);
+  }
+
+  private static string GetLatestLogFilePath()
+  {
+    string str1 = Path.Combine(Environment.GetFolderPath((Environment.SpecialFolder) 5), "ETS2MP", "logs");
+    if (!Directory.Exists(str1))
+    {
+      Program.PrintWithColor("Log directory not found: " + str1, Program.AlertColor);
+      return (string) null;
+    }
+    string[] files = Directory.GetFiles(str1, "log_spawning_*_log.txt");
+    if (files.Length == 0)
+    {
+      Program.PrintWithColor("No log files found in directory.", Program.AlertColor);
+      return (string) null;
+    }
+    DateTime dateTime1 = DateTime.MinValue;
+    string latestLogFilePath = (string) null;
+    foreach (string str2 in files)
+    {
+      string fileName = Path.GetFileName(str2);
+      string[] strArray = fileName.Split('_', (StringSplitOptions) 0);
+      if (strArray.Length < 4)
+      {
+        Program.PrintWithColor("Unexpected log file name format: " + fileName, Program.AlertColor);
+      }
+      else
+      {
+        DateTime dateTime2;
+        if (DateTime.TryParseExact(strArray[2], "yyyy.MM.dd", (IFormatProvider) CultureInfo.InvariantCulture, (DateTimeStyles) 0, ref dateTime2))
+        {
+          if (DateTime.op_GreaterThan(dateTime2, dateTime1))
+          {
+            dateTime1 = dateTime2;
+            latestLogFilePath = str2;
+          }
+        }
+        else
+          Program.PrintWithColor("Could not parse date from filename: " + fileName, Program.AlertColor);
+      }
+    }
+    return latestLogFilePath;
+  }
+
+  private static async Task SetupAdminFile()
+  {
+    try
+    {
+      string stringAsync = await Program.client.GetStringAsync(Program.AdminListUrl);
+      await File.WriteAllTextAsync(Program.AdminFilePath, stringAsync, new CancellationToken());
+    }
+    catch (Exception ex)
+    {
+      Program.PrintWithColor("Error downloading admin list: " + ex.Message, Program.AlertColor);
+    }
+  }
+
+  private static void LoadSavedPaths()
+  {
+    string str = Path.Combine(Environment.GetFolderPath((Environment.SpecialFolder) 26), "Choice", "Choice.txt");
+    if (!File.Exists(str))
+      return;
+    Program.LogFilePath = File.ReadAllText(str).Trim();
+    Program.PrintWithColor("Loaded saved log file path: " + Program.LogFilePath, Program.SuccessColor);
+  }
+
+  private static void SavePaths(string path)
+  {
+    string str = Path.Combine(Environment.GetFolderPath((Environment.SpecialFolder) 26), "Choice");
+    Directory.CreateDirectory(str);
+    File.WriteAllText(Path.Combine(str, "Choice.txt"), path);
+    Program.PrintWithColor("Log file path saved to persistent storage.", Program.SuccessColor);
+  }
+
+  private static void LoadSavedWebhook()
+  {
+    string str = Path.Combine(Path.Combine(Environment.GetFolderPath((Environment.SpecialFolder) 26), "Choice"), "Webhook.txt");
+    if (!File.Exists(str))
+      return;
+    Program.DiscordWebhookUrl = File.ReadAllText(str).Trim();
+    Program.PrintWithColor("Loaded saved Discord webhook URL.", Program.SuccessColor);
+  }
+
+  private static void SaveWebhook(string webhook)
+  {
+    string str = Path.Combine(Environment.GetFolderPath((Environment.SpecialFolder) 26), "Choice");
+    Directory.CreateDirectory(str);
+    File.WriteAllText(Path.Combine(str, "Webhook.txt"), webhook);
+    Program.PrintWithColor("Discord webhook URL saved to persistent storage.", Program.SuccessColor);
+  }
+
+  private static async Task StartChecking()
+  {
+    CancellationTokenSource autoUpdateCts;
+    Task autoUpdateTask;
+    Task monitoringTask;
+    if (!File.Exists(Program.AdminFilePath))
+    {
+      Program.PrintWithColor("Error: Admin database not found.", Program.AlertColor);
+      autoUpdateCts = (CancellationTokenSource) null;
+      autoUpdateTask = (Task) null;
+      monitoringTask = (Task) null;
+    }
+    else if (!File.Exists(Program.LogFilePath))
+    {
+      Program.PrintWithColor("Error: Log file not found at specified path.", Program.AlertColor);
+      autoUpdateCts = (CancellationTokenSource) null;
+      autoUpdateTask = (Task) null;
+      monitoringTask = (Task) null;
+    }
+    else
+    {
+      Program.PrintWithColor("Loading admin groups...", Program.PrimaryColor);
+      await Program.LoadAdminGroups();
+      autoUpdateCts = new CancellationTokenSource();
+      autoUpdateTask = Program.AutoUpdateAdminFile(autoUpdateCts.Token);
+      Program.PrintWithColor("Starting real-time monitoring...", Program.SuccessColor);
+      Program.PrintWithColor("Press Q to quit\n", Program.SecondaryColor);
+      CancellationTokenSource cancelTokenSource = new CancellationTokenSource();
+      monitoringTask = Task.Run((Func<Task>) (() => Program.MonitorLogFile(cancelTokenSource.Token)));
+      while (Program.Running)
+      {
+        if (Console.KeyAvailable && Console.ReadKey(true).Key == 81)
+        {
+          Program.Running = false;
+          cancelTokenSource.Cancel();
+          autoUpdateCts.Cancel();
+          break;
+        }
+        await Task.Delay(100);
+      }
+      await Task.WhenAll(new Task[2]
+      {
+        monitoringTask,
+        autoUpdateTask
+      });
+      Program.PrintWithColor("\nMonitoring stopped. Exiting...", Program.SecondaryColor);
+      await Task.Delay(1000);
+      autoUpdateCts = (CancellationTokenSource) null;
+      autoUpdateTask = (Task) null;
+      monitoringTask = (Task) null;
+    }
+  }
+
+  private static async Task AutoUpdateAdminFile(CancellationToken cancellationToken)
+  {
+    while (!cancellationToken.IsCancellationRequested)
+    {
+      Program.PrintWithColor("Refreshing admin database...", Program.PrimaryColor);
+      await Program.SetupAdminFile();
+      await Program.LoadAdminGroups();
+      try
+      {
+        await Task.Delay(TimeSpan.FromMinutes(10.0), cancellationToken);
+      }
+      catch (TaskCanceledException ex)
+      {
+        break;
+      }
+    }
+  }
+
+  private static async Task LoadAdminGroups()
+  {
+    string[] strArray = await File.ReadAllLinesAsync(Program.AdminFilePath, new CancellationToken());
+    Program.AdminGroup1.Clear();
+    Program.AdminGroup2.Clear();
+    List<string> stringList = new List<string>();
+    foreach (string str in Enumerable.Select<string, string>((IEnumerable<string>) strArray, (Func<string, string>) (l => l.Trim())))
+    {
+      if (string.IsNullOrEmpty(str))
+      {
+        if (Program.AdminGroup1.Count > 0 && Program.AdminGroup2.Count == 0)
+          stringList = new List<string>();
+      }
+      else
+      {
+        stringList.Add(str);
+        if (Program.AdminGroup1.Count == 0)
+          Program.AdminGroup1.UnionWith((IEnumerable<string>) stringList);
+        else
+          Program.AdminGroup2.UnionWith((IEnumerable<string>) stringList);
+      }
+    }
+  }
+
+  private static async Task MonitorLogFile(CancellationToken cancellationToken)
+  {
+    HashSet<string> lastLines = new HashSet<string>();
+    long lastPosition = 0;
+    while (Program.Running)
+    {
+      if (!cancellationToken.IsCancellationRequested)
+      {
+        try
+        {
+          using (FileStream fs = new FileStream(Program.LogFilePath, (FileMode) 3, (FileAccess) 1, (FileShare) 3))
+          {
+            if (((Stream) fs).Length < lastPosition)
+            {
+              lastPosition = 0L;
+              lastLines.Clear();
+            }
+            ((Stream) fs).Seek(lastPosition, (SeekOrigin) 0);
+            using (StreamReader sr = new StreamReader((Stream) fs))
+            {
+              while (true)
+              {
+                string logLine;
+                do
+                {
+                  if ((logLine = await ((TextReader) sr).ReadLineAsync()) == null)
+                    goto label_11;
+                }
+                while (lastLines.Contains(logLine));
+                lastLines.Add(logLine);
+                Program.DetectModerator(logLine);
+              }
+label_11:
+              lastPosition = ((Stream) fs).Position;
+            }
+          }
+          await Task.Delay(3000, cancellationToken);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+          Program.PrintWithColor("Monitoring error: " + ex.Message, Program.AlertColor);
+          await Task.Delay(5000, cancellationToken);
+        }
+      }
+      else
+      {
+        lastLines = (HashSet<string>) null;
+        return;
+      }
+    }
+    lastLines = (HashSet<string>) null;
+  }
+
+  private static void DetectModerator(string logLine)
+  {
+    Match match = Regex.Match(logLine, "TMPID:\\s*(\\d+)");
+    if (!((Group) match).Success)
+      return;
+    string str = ((Capture) match.Groups[1]).Value;
+    if (Program.AdminGroup1.Contains(str))
+    {
+      Program.NotifyModerator(logLine, "GAME MODERATOR");
+    }
+    else
+    {
+      if (!Program.AdminGroup2.Contains(str))
+        return;
+      Program.NotifyModerator(logLine, "REPORT MODERATOR");
+    }
+  }
+
+  private static async void NotifyModerator(string logLine, string moderatorType)
+  {
+    Match match1 = Regex.Match(logLine, "\\((.+?)\\(");
+    Match match2 = Regex.Match(logLine, "\\((.+?)\\((-?\\d+)\\)");
+    if (!((Group) match1).Success || !((Group) match2).Success)
+      return;
+    string str1 = ((Capture) match1.Groups[1]).Value;
+    string str2 = ((Capture) match2.Groups[2]).Value;
+    DateTime dateTime;
+    if (Program.lastNotificationTimes.TryGetValue(str2, ref dateTime) && TimeSpan.op_LessThan(DateTime.op_Subtraction(DateTime.Now, dateTime), Program.NotificationDelay))
+      return;
+    Program.lastNotificationTimes[str2] = DateTime.Now;
+    DefaultInterpolatedStringHandler interpolatedStringHandler = new DefaultInterpolatedStringHandler(24, 4);
+    interpolatedStringHandler.AppendLiteral("[");
+    interpolatedStringHandler.AppendFormatted<DateTime>(DateTime.Now, "HH:mm:ss");
+    interpolatedStringHandler.AppendLiteral("] ");
+    interpolatedStringHandler.AppendFormatted(moderatorType);
+    interpolatedStringHandler.AppendLiteral(" DETECTED: ");
+    interpolatedStringHandler.AppendFormatted(str1);
+    interpolatedStringHandler.AppendLiteral(" (ID: @");
+    interpolatedStringHandler.AppendFormatted(str2);
+    interpolatedStringHandler.AppendLiteral(" ) ");
+    string stringAndClear = interpolatedStringHandler.ToStringAndClear();
+    Console.ForegroundColor = Program.AlertColor;
+    interpolatedStringHandler = new DefaultInterpolatedStringHandler(3, 1);
+    interpolatedStringHandler.AppendLiteral("[");
+    interpolatedStringHandler.AppendFormatted<DateTime>(DateTime.Now, "HH:mm:ss");
+    interpolatedStringHandler.AppendLiteral("] ");
+    Console.Write(interpolatedStringHandler.ToStringAndClear());
+    Console.ForegroundColor = (ConsoleColor) 14;
+    Console.Write(moderatorType);
+    Console.ForegroundColor = Program.AlertColor;
+    interpolatedStringHandler = new DefaultInterpolatedStringHandler(51, 2);
+    interpolatedStringHandler.AppendLiteral(" DETECTED: ");
+    interpolatedStringHandler.AppendFormatted(str1);
+    interpolatedStringHandler.AppendLiteral(" (ID: @");
+    interpolatedStringHandler.AppendFormatted(str2);
+    interpolatedStringHandler.AppendLiteral(") PING To See if admin still here");
+    Console.WriteLine(interpolatedStringHandler.ToStringAndClear());
+    Console.ResetColor();
+    await Program.SendWebhookMessage(stringAndClear);
+    SystemSounds.Exclamation.Play();
+  }
+
+  private static async Task SendWebhookMessage(string content)
+  {
+    try
+    {
+      StringContent stringContent = new StringContent("{ \"content\": \"" + content + "\" }", Encoding.UTF8, "application/json");
+      if ((await Program.client.PostAsync(Program.DiscordWebhookUrl, (HttpContent) stringContent)).IsSuccessStatusCode)
+        return;
+      Program.PrintWithColor("Webhook notification failed.", Program.AlertColor);
+    }
+    catch (Exception ex)
+    {
+      Program.PrintWithColor("Webhook error: " + ex.Message, Program.AlertColor);
+    }
+  }
+
+  private static void PrintWithColor(string message, ConsoleColor color, bool newLine = true)
+  {
+    Console.ForegroundColor = color;
+    if (newLine)
+      Console.WriteLine(message);
+    else
+      Console.Write(message);
+    Console.ResetColor();
+  }
+}
