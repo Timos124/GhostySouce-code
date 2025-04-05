@@ -1,0 +1,331 @@
+using Microsoft.Win32;
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Net;
+using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
+
+#nullable enable
+internal class Program
+{
+  private static readonly string spoofDir = "C:\\Spoofing";
+  private static readonly string diskCmd = Path.Combine(Program.spoofDir, "disk.cmd");
+  private static readonly string diskUrl = "https://spyderrock.com/tEci4127-disk.cmd";
+  private static readonly string discordUrl = "https://discord.gg/yourInviteCode";
+  private static readonly string truckersMPInstallerUrl = "https://spyderrock.com/hceP8083-TruckersMP-Setup.exe";
+
+  private static async Task Main()
+  {
+    Console.Title = "Ghosty ETS2MP Spoofer";
+    Program.DisplayBanner();
+    bool exit = false;
+    while (!exit)
+    {
+      Console.WriteLine("\nSelect an option:");
+      Console.WriteLine("1. Start Spoof");
+      Console.WriteLine("2. What does the spoofer do?");
+      Console.WriteLine("3. Join Discord");
+      Console.WriteLine("4. Install and Start TruckersMP");
+      Console.Write("Enter your choice: ");
+      string str = Console.ReadLine()?.Trim();
+      if (!string.op_Equality(str, "1"))
+      {
+        if (!string.op_Equality(str, "2"))
+        {
+          if (!string.op_Equality(str, "3"))
+          {
+            if (string.op_Equality(str, "4"))
+              await Program.InstallAndStartTruckersMPAsync();
+            else
+              Program.WriteLineColor("Invalid option. Please choose 1, 2, 3, or 4.", (ConsoleColor) 12);
+          }
+          else
+            Program.JoinDiscord();
+        }
+        else
+          Program.ShowInfo();
+      }
+      else
+      {
+        await Program.StartSpoofAsync();
+        exit = true;
+      }
+    }
+  }
+
+  private static async Task StartSpoofAsync()
+  {
+    Program.WriteLineColor("\nGhosty ETS2MP Spoofer | Disconnect banned account and close Steam first\n", (ConsoleColor) 11);
+    try
+    {
+      Directory.CreateDirectory(Program.spoofDir);
+      await Program.DownloadFileAsync(Program.diskUrl, Program.diskCmd, "Downloading spoofing script...", (ConsoleColor) 14);
+      Program.WriteLineColor("\nPress any key to confirm spoofing...", (ConsoleColor) 13);
+      Console.ReadKey(true);
+      await Program.ExecuteAsAdminAsync(Program.diskCmd, "Spoofing Disk...", (ConsoleColor) 10);
+      await Program.UninstallTruckersMPAsync();
+      Program.CleanupFiles();
+      Directory.Delete(Program.spoofDir, true);
+      Program.WriteLineColor("\nSpoofing directory removed successfully.", (ConsoleColor) 10);
+      Program.GenerateAndUpdateGUIDs();
+      Program.HandleTMACInstallation();
+    }
+    catch (Exception ex)
+    {
+      Program.WriteLineColor("\n[Error] " + ex.Message, (ConsoleColor) 12);
+    }
+    Program.WriteLineColor("\nOpened TMAC, spoof every connection, then restart your PC!", (ConsoleColor) 11);
+    Console.WriteLine("\nPress any key to exit...");
+    Console.ReadKey(true);
+  }
+
+  private static void ShowInfo()
+  {
+    Console.Clear();
+    Program.DisplayBanner();
+    Program.WriteLineColor("\nWhat does the spoofer do?", (ConsoleColor) 11);
+    Console.WriteLine("\n- Downloads a spoofing script to update your disk signature.\n- Uninstalls TruckersMP if installed and cleans up residual files.\n- Generates new GUIDs and updates registry entries to spoof your system.\n- Spoofer isnt obfuscated, you can easily see what it does.\n- Handles installation/launch of TMAC for spoofing network connections.\n");
+    Program.WriteLineColor("Press any key to return to the main menu...", (ConsoleColor) 14);
+    Console.ReadKey(true);
+    Console.Clear();
+    Program.DisplayBanner();
+  }
+
+  private static void JoinDiscord()
+  {
+    try
+    {
+      Process.Start(new ProcessStartInfo()
+      {
+        FileName = Program.discordUrl,
+        UseShellExecute = true
+      });
+      Program.WriteLineColor("\nDiscord invite opened in your default browser.", (ConsoleColor) 10);
+    }
+    catch (Exception ex)
+    {
+      Program.WriteLineColor("\n[Error opening Discord] " + ex.Message, (ConsoleColor) 12);
+    }
+    Program.WriteLineColor("\nPress any key to return to the main menu...", (ConsoleColor) 14);
+    Console.ReadKey(true);
+    Console.Clear();
+    Program.DisplayBanner();
+  }
+
+  private static async Task InstallAndStartTruckersMPAsync()
+  {
+    string installerPath = Path.Combine(Path.GetTempPath(), "TruckersMP-Setup.exe");
+    Program.WriteLineColor("Downloading TruckersMP installer...", (ConsoleColor) 14);
+    using (WebClient client = new WebClient())
+      await client.DownloadFileTaskAsync(Program.truckersMPInstallerUrl, installerPath);
+    Program.WriteLineColor("Download completed.", (ConsoleColor) 10);
+    await Program.ExecuteAsAdminAsync(installerPath, "Installing TruckersMP...", (ConsoleColor) 10);
+    Program.LaunchTruckersMP();
+    installerPath = (string) null;
+  }
+
+  private static void LaunchTruckersMP()
+  {
+    string str = "C:\\Program Files (x86)\\TruckersMP\\TruckersMP.exe";
+    if (!File.Exists(str))
+      return;
+    Process.Start(new ProcessStartInfo()
+    {
+      FileName = str,
+      UseShellExecute = true
+    });
+    Program.WriteLineColor("TruckersMP launched successfully.", (ConsoleColor) 10);
+  }
+
+  private static void DisplayBanner()
+  {
+    Console.ForegroundColor = (ConsoleColor) 9;
+    Console.WriteLine(" \r\n░██████╗░██╗░░██╗░█████╗░░██████╗████████╗██╗░░░██╗\r\n██╔════╝░██║░░██║██╔══██╗██╔════╝╚══██╔══╝╚██╗░██╔╝\r\n██║░░██╗░███████║██║░░██║╚█████╗░░░░██║░░░░╚████╔╝░\r\n██║░░╚██╗██╔══██║██║░░██║░╚═══██╗░░░██║░░░░░╚██╔╝░░\r\n╚██████╔╝██║░░██║╚█████╔╝██████╔╝░░░██║░░░░░░██║░░░\r\n░╚═════╝░╚═╝░░╚═╝░╚════╝░╚═════╝░░░░╚═╝░░░░░░╚═╝░░░");
+    Console.ResetColor();
+  }
+
+  private static void WriteLineColor(string message, ConsoleColor color)
+  {
+    Console.ForegroundColor = color;
+    Console.WriteLine(message);
+    Console.ResetColor();
+  }
+
+  private static async Task DownloadFileAsync(
+    string url,
+    string path,
+    string msg,
+    ConsoleColor color)
+  {
+    Program.WriteLineColor(msg, color);
+    using (WebClient client = new WebClient())
+      await Program.ShowSpinnerAsync(client.DownloadFileTaskAsync(url, path));
+    Program.WriteLineColor("Download completed.", (ConsoleColor) 10);
+  }
+
+  private static async Task ShowSpinnerAsync(Task task)
+  {
+    char[] sequence = new char[4]{ '|', '/', '-', '\\' };
+    int counter = 0;
+    while (!task.IsCompleted)
+    {
+      Console.Write(sequence[counter++ % sequence.Length]);
+      Console.SetCursorPosition(Console.CursorLeft - 1, Console.CursorTop);
+      await Task.Delay(100);
+    }
+    Console.Write(" ");
+    sequence = (char[]) null;
+  }
+
+  private static async Task ExecuteAsAdminAsync(string filePath, string msg, ConsoleColor color)
+  {
+    Program.WriteLineColor(msg, color);
+    ProcessStartInfo processStartInfo = new ProcessStartInfo()
+    {
+      FileName = "cmd.exe",
+      Arguments = "/C \"" + filePath + "\"",
+      Verb = "runas",
+      UseShellExecute = true,
+      CreateNoWindow = true
+    };
+    using (Process process = Process.Start(processStartInfo))
+    {
+      if (process != null)
+        await Task.Run((Action) (() => process.WaitForExit()));
+    }
+  }
+
+  private static async Task UninstallTruckersMPAsync()
+  {
+    Program.WriteLineColor("\nChecking for TruckersMP installation...", (ConsoleColor) 14);
+    string uninstallString = Program.FindUninstallString();
+    if (!string.IsNullOrEmpty(uninstallString))
+    {
+      await Program.ExecuteAsAdminAsync(uninstallString, "Uninstalling TruckersMP...", (ConsoleColor) 12);
+      Program.WriteLineColor("Uninstallation complete.", (ConsoleColor) 10);
+    }
+    else
+      Program.WriteLineColor("TruckersMP not found.", (ConsoleColor) 7);
+  }
+
+  private static string FindUninstallString()
+  {
+    string[] strArray = new string[2]
+    {
+      "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall",
+      "SOFTWARE\\Wow6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall"
+    };
+    foreach (string name in strArray)
+    {
+      using (RegistryKey registryKey1 = Registry.LocalMachine.OpenSubKey(name))
+      {
+        if (registryKey1 != null)
+        {
+          foreach (string subKeyName in registryKey1.GetSubKeyNames())
+          {
+            using (RegistryKey registryKey2 = registryKey1.OpenSubKey(subKeyName))
+            {
+              string str = registryKey2?.GetValue("DisplayName") as string;
+              if (!string.IsNullOrEmpty(str))
+              {
+                if (str.Contains("TruckersMP"))
+                  return registryKey2.GetValue("UninstallString") as string;
+              }
+            }
+          }
+        }
+      }
+    }
+    return (string) null;
+  }
+
+  private static void CleanupFiles()
+  {
+    Program.WriteLineColor("\nCleaning up residual files...", (ConsoleColor) 14);
+    string[] strArray = new string[3]
+    {
+      Path.Combine(Environment.GetFolderPath((Environment.SpecialFolder) 28), "TruckersMP"),
+      Path.Combine(Environment.GetFolderPath((Environment.SpecialFolder) 26), "TruckersMP"),
+      Path.Combine(Environment.GetFolderPath((Environment.SpecialFolder) 5), "ETS2MP")
+    };
+    foreach (string str in strArray)
+    {
+      if (Directory.Exists(str))
+        Directory.Delete(str, true);
+    }
+    Program.WriteLineColor("Cleanup completed.", (ConsoleColor) 10);
+  }
+
+  private static void HandleTMACInstallation()
+  {
+    Program.WriteLineColor("\nDo you have TMAC installed? (Y/N)", (ConsoleColor) 11);
+    if (string.op_Equality(Console.ReadLine()?.Trim().ToUpper(), "Y"))
+      Program.LaunchTMAC();
+    else
+      Program.InstallTMAC();
+  }
+
+  private static void LaunchTMAC()
+  {
+    string str = "C:\\Program Files (x86)\\Technitium\\TMACv6.0\\TMAC.exe";
+    if (File.Exists(str))
+    {
+      Process.Start(new ProcessStartInfo()
+      {
+        FileName = str,
+        UseShellExecute = true
+      });
+      Program.WriteLineColor("TMAC launched successfully.", (ConsoleColor) 10);
+    }
+    else
+      Program.WriteLineColor("TMAC not found.", (ConsoleColor) 12);
+  }
+
+  private static void InstallTMAC()
+  {
+    string str = Path.Combine(Path.GetTempPath(), "tmac.exe");
+    string address = "https://spyderrock.com/pjKr9021-tmac.exe";
+    Program.WriteLineColor("Downloading TMAC installer...", (ConsoleColor) 14);
+    using (WebClient webClient = new WebClient())
+      webClient.DownloadFile(address, str);
+    Program.WriteLineColor("Download completed.", (ConsoleColor) 10);
+    Program.ExecuteAsAdminAsync(str, "Installing TMAC...", (ConsoleColor) 10).Wait();
+  }
+
+  private static void GenerateAndUpdateGUIDs()
+  {
+    string newValue1 = Guid.NewGuid().ToString();
+    string newValue2 = Guid.NewGuid().ToString();
+    Program.WriteLineColor("\nGenerating and updating GUIDs...", (ConsoleColor) 14);
+    Program.UpdateRegistryKey("SOFTWARE\\Microsoft\\Cryptography", "MachineGuid", newValue1);
+    Program.UpdateRegistryKey("SYSTEM\\CurrentControlSet\\Control\\IDConfigDB\\Hardware Profiles\\0001", "HwProfileGuid", newValue2);
+  }
+
+  private static void UpdateRegistryKey(string keyPath, string valueName, string newValue)
+  {
+    try
+    {
+      using (RegistryKey registryKey = Registry.LocalMachine.OpenSubKey(keyPath, true))
+      {
+        if (registryKey != null)
+        {
+          registryKey.SetValue(valueName, (object) newValue);
+          DefaultInterpolatedStringHandler interpolatedStringHandler = new DefaultInterpolatedStringHandler(13, 2);
+          interpolatedStringHandler.AppendLiteral("Updated ");
+          interpolatedStringHandler.AppendFormatted(valueName);
+          interpolatedStringHandler.AppendLiteral(" in ");
+          interpolatedStringHandler.AppendFormatted(keyPath);
+          interpolatedStringHandler.AppendLiteral(".");
+          Program.WriteLineColor(interpolatedStringHandler.ToStringAndClear(), (ConsoleColor) 10);
+        }
+        else
+          Program.WriteLineColor("Failed to open registry key: " + keyPath, (ConsoleColor) 12);
+      }
+    }
+    catch (Exception ex)
+    {
+      Program.WriteLineColor("Error updating registry: " + ex.Message, (ConsoleColor) 12);
+    }
+  }
+}
